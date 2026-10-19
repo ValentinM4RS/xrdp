@@ -421,6 +421,8 @@ int      g_check_user_in_group(const char *username, int gid, int *ok);
 int      g_time1(void);
 int      g_time2(void);
 int      g_time3(void);
+/* Monotonic milliseconds, modulo UINT_MAX, for bounded protocol deadlines. */
+unsigned int g_get_elapsed_ms(void);
 int      g_save_to_bmp(const char *filename, char *data, int stride_bytes,
                        int width, int height, int depth, int bits_per_pixel);
 void    *g_shmat(int shmid);

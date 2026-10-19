@@ -4,6 +4,9 @@ ini_version=1
 
 ; fork a new process for each incoming connection
 fork=true
+; Explicit receive-only Unicode paste in login fields (Ctrl+V / Shift+Insert).
+; Requires cliprdr and client clipboard redirection. See docs/login-clipboard.md.
+ls_clipboard=false
 
 ; ports to listen on, number alone means listen on all interfaces
 ; 0.0.0.0 or :: if ipv6 is configured

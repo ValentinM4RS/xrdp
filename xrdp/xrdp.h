@@ -256,6 +256,8 @@ xrdp_bitmap_copy_box(struct xrdp_bitmap *self,
                      int x, int y, int cx, int cy);
 
 /* xrdp_bitmap.c */
+int
+xrdp_bitmap_edit_remove_char(struct xrdp_bitmap *self, unsigned int index);
 struct xrdp_bitmap *
 xrdp_bitmap_get_child_by_id(struct xrdp_bitmap *self, int id);
 int
@@ -464,6 +466,10 @@ unsigned int
 xrdp_login_wnd_get_monitor_dpi(struct xrdp_wm *self);
 int
 xrdp_login_wnd_create(struct xrdp_wm *self);
+void
+xrdp_login_clear_values(struct list *values);
+int
+xrdp_mm_parse_chansrvport(const char *value, char *dest, int dest_size, int uid);
 int
 load_xrdp_config(struct xrdp_config *config, const char *xrdp_ini, int bpp);
 void

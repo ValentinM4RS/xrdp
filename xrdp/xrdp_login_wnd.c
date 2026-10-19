@@ -26,6 +26,7 @@
 #include "xrdp.h"
 #include "log.h"
 #include "string_calls.h"
+#include <openssl/crypto.h>
 
 #define ASK "ask"
 #define ASK_LEN g_strlen(ASK)
@@ -136,6 +137,24 @@ xrdp_wm_delete_all_children(struct xrdp_wm *self)
 }
 
 /*****************************************************************************/
+void
+xrdp_login_clear_values(struct list *values)
+{
+    int i;
+    if (values != NULL)
+    {
+        for (i = 0; i < values->count; ++i)
+        {
+            char *value = (char *)list_get_item(values, i);
+            if (value != NULL)
+            {
+                OPENSSL_cleanse(value, g_strlen(value));
+            }
+        }
+        list_clear(values);
+    }
+}
+
 static int
 set_mod_data_item(struct xrdp_mod_data *mod, char *name, char *value)
 {
@@ -145,6 +164,11 @@ set_mod_data_item(struct xrdp_mod_data *mod, char *name, char *value)
     {
         if (g_strncmp(name, (char *)list_get_item(mod->names, index), 255) == 0)
         {
+            char *previous = (char *)list_get_item(mod->values, index);
+            if (previous != NULL)
+            {
+                OPENSSL_cleanse(previous, g_strlen(previous));
+            }
             list_remove_item(mod->values, index);
             list_insert_item(mod->values, index, (long)g_strdup(value));
         }
@@ -259,6 +283,7 @@ xrdp_wm_ok_clicked(struct xrdp_bitmap *wnd)
             }
 
             list_delete(wm->mm->login_names);
+            xrdp_login_clear_values(wm->mm->login_values);
             list_delete(wm->mm->login_values);
             wm->mm->login_names = list_create();
             wm->mm->login_names->auto_free = 1;
@@ -452,6 +477,7 @@ xrdp_wm_show_edits(struct xrdp_wm *self, struct xrdp_bitmap *combo)
                 b->pointer = 1;
                 b->tab_stop = 1;
                 b->caption1 = (char *)g_malloc(256, 1);
+                b->caption_bytes = 256;
                 /* ask{base64}... 3 for "ask", 8 for "{base64}" */
                 if (g_strncmp(BASE64PREFIX, value + ASK_LEN, BASE64PREFIX_LEN) == 0)
                 {
@@ -1074,6 +1100,7 @@ load_xrdp_config(struct xrdp_config *config, const char *xrdp_ini, int bpp)
 
     /* set default values in case we can't get them from xrdp.ini file */
     globals->ini_version = 1;
+    globals->ls_clipboard = 0;
     globals->default_dpi = 96;
 
     globals->ls_top_window_bg_color = HCOLOR(bpp, xrdp_wm_htoi("009cb5"));
@@ -1303,6 +1330,10 @@ load_xrdp_config(struct xrdp_config *config, const char *xrdp_ini, int bpp)
         }
 
         /* login screen values */
+        else if (g_strcmp(n, "ls_clipboard") == 0)
+        {
+            globals->ls_clipboard = g_text2bool(v);
+        }
         else if (g_strcmp(n, "default_dpi") == 0)
         {
             globals->default_dpi = g_atoi(v);

@@ -3,7 +3,7 @@ EXTRA_DIST = \
   rdp-scan-codes.txt \
   xrdpwin.c
 
-AM_CPPFLAGS = \
+AM_CPPFLAGS = $(OPENSSL_CFLAGS) \
   -DXRDP_CFG_PATH=\"${sysconfdir}/${sysconfsubdir}\" \
   -DXRDP_SBIN_PATH=\"${sbindir}\" \
   -DXRDP_SHARE_PATH=\"${datadir}/xrdp\" \
@@ -71,6 +71,8 @@ xrdp_SOURCES = \
   xrdp_font.c \
   xrdp_listen.c \
   xrdp_login_wnd.c \
+  xrdp_login_clipboard.c \
+  xrdp_login_clipboard.h \
   xrdp_mm.c \
   xrdp_painter.c \
   xrdp_process.c \
@@ -84,7 +86,7 @@ xrdp_SOURCES = \
   xrdp_tconfig.h \
   $(XRDP_EXTRA_SOURCES)
 
-xrdp_LDADD = \
+xrdp_LDADD = $(OPENSSL_LIBS) \
   $(top_builddir)/common/libcommon.la \
   $(top_builddir)/libipm/libipm.la \
   $(top_builddir)/libxrdp/libxrdp.la \

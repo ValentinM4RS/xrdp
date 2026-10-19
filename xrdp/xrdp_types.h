@@ -508,6 +508,7 @@ struct xrdp_wm
     struct xrdp_cache *cache;
     int palette[256];
     struct xrdp_bitmap *login_window;
+    struct xrdp_login_clipboard *login_clipboard;
     /* generic colors */
     int black;
     int grey;
@@ -650,6 +651,7 @@ struct xrdp_bitmap
     int tab_stop;
     int id;
     char *caption1;
+    unsigned int caption_bytes; /* known edit allocation capacity, zero if unknown */
     /* for window or screen */
     struct xrdp_bitmap *modal_dialog;
     struct xrdp_bitmap *focused_control;
@@ -811,6 +813,7 @@ struct xrdp_cfg_globals
     int  background;
 
     /* login screen */
+    int ls_clipboard; /* opt-in, receive-only login clipboard */
     unsigned int  default_dpi;   /* Default DPI to use if nothing from client */
     char fv1_select[256];        /* Selection string for fv1 font */
     int  ls_top_window_bg_color; /* top level window background color */

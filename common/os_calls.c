@@ -3899,6 +3899,23 @@ g_time3(void)
 }
 
 /******************************************************************************/
+unsigned int
+g_get_elapsed_ms(void)
+{
+#if defined(_WIN32)
+    return (unsigned int)GetTickCount();
+#else
+    struct timespec tp;
+    if (clock_gettime(CLOCK_MONOTONIC, &tp) == 0)
+    {
+        return (unsigned int)tp.tv_sec * 1000U +
+               (unsigned int)(tp.tv_nsec / 1000000);
+    }
+    return 0;
+#endif
+}
+
+/******************************************************************************/
 /******************************************************************************/
 struct bmp_magic
 {

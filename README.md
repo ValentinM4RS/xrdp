@@ -152,3 +152,7 @@ xrdp
 ├── xrdpvr ······ API for playing media over RDP
 └── xup ········· xorgxrdp client module
 ```
+
+Optional Unicode paste into the login form is documented in
+[Login clipboard for v0.10](docs/login-clipboard.md). It is disabled by default
+and supports Ctrl+V and Shift+Insert when explicitly enabled.

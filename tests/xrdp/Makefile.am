@@ -1,4 +1,4 @@
-AM_CPPFLAGS = \
+AM_CPPFLAGS = $(OPENSSL_CFLAGS) \
   -DXRDP_TOP_SRCDIR=\"$(top_srcdir)\" \
   -I$(top_builddir) \
   -I$(top_srcdir)/xrdp \
@@ -12,6 +12,8 @@ LOG_DRIVER = env AM_TAP_AWK='$(AWK)' $(SHELL) \
 PACKAGE_STRING="XRDP daemon"
 
 EXTRA_DIST = \
+  fuzz_login_clipboard.c \
+  run_login_clipboard_fuzz.sh \
   test_4bit.bmp \
   test_8bit.bmp \
   test_24bit.bmp \
@@ -39,6 +41,7 @@ check_PROGRAMS = test_xrdp
 test_xrdp_SOURCES = \
     test_xrdp.h \
     test_xrdp_main.c \
+    test_login_clipboard.c \
     test_xrdp_egfx.c \
     test_xrdp_region.c \
     test_tconfig.c \
@@ -50,7 +53,8 @@ test_xrdp_CFLAGS = \
     @CMOCKA_CFLAGS@
 
 test_xrdp_LDFLAGS = -Wl,--wrap=pixman_region_extents, \
-    -Wl,--wrap=pixman_region_not_empty
+    -Wl,--wrap=pixman_region_not_empty \
+    -Wl,--wrap=OPENSSL_cleanse
 
 test_xrdp_LDADD = \
     $(top_builddir)/xrdp/xrdp_bitmap_load.o \
@@ -79,6 +83,7 @@ test_xrdp_LDADD = \
     $(top_builddir)/xrdp/xrdp_main_utils.o \
     $(PIXMAN_LIBS) \
     $(IMLIB2_LIBS) \
+    $(OPENSSL_LIBS) \
     @CHECK_LIBS@ \
     @CMOCKA_LIBS@
 

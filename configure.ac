@@ -220,6 +220,7 @@ AM_COND_IF([DEVEL_DEBUG],
 
 # Function setusercontext() is in BSD -lutil but N/A on Solaris or GNU systems
 AC_SEARCH_LIBS([setusercontext], [util])
+AC_SEARCH_LIBS([clock_gettime], [rt])
 
 # Define HAVE_XXXXX macros for some system functions
 AC_CHECK_FUNCS([setusercontext getgrouplist clearenv strlcpy explicit_bzero])
