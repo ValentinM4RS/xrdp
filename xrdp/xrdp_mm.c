@@ -24,6 +24,8 @@
 #include "xrdp_mm.h"
 #include "xrdp.h"
 #include "xrdp_login_lvgl.h"
+#include "xrdp_login_clipboard.h"
+#include "xrdp_login.h"
 #include "log.h"
 #include "string_calls.h"
 #include "guid.h"
@@ -229,6 +231,7 @@ xrdp_mm_delete(struct xrdp_mm *self)
     trans_delete(self->sesman_trans);
     self->sesman_trans = 0;
     list_delete(self->login_names);
+    xrdp_login_clear_values(self->login_values);
     list_delete(self->login_values);
     list_delete(self->resize_queue);
     g_free(self->resize_data);
@@ -488,7 +491,8 @@ xrdp_mm_trans_process_channel_data(struct xrdp_mm *self, struct stream *s)
         {
             rv = 1;
         }
-        else
+        else if (!xrdp_login_clipboard_channel_out(self->wm, chan_id,
+                                                  chan_flags, s->p, size))
         {
             rv = libxrdp_send_to_channel(self->wm->session, chan_id,
                                          s->p, size, total_size, chan_flags);
@@ -2994,8 +2998,8 @@ cleanup_states(struct xrdp_mm *self)
  * @return 0 for success
  */
 
-static int
-parse_chansrvport(const char *value, char dest[], int dest_size, int uid)
+int
+xrdp_mm_parse_chansrvport(const char *value, char dest[], int dest_size, int uid)
 {
     int rv = 0;
     char dstr[MAX_DISPLAY_NAME_SIZE];
@@ -3077,7 +3081,7 @@ parse_chansrvport(const char *value, char dest[], int dest_size, int uid)
 
         g_snprintf(dest, dest_size, XRDP_CHANSRV_STR, uid, dstr);
     }
-    else
+    else if (dest != NULL && dest_size > 0)
     {
         strlcpy(dest, value, dest_size);
     }
@@ -3159,7 +3163,7 @@ xrdp_mm_chansrv_connect(struct xrdp_mm *self)
     else
     {
         const char *cp = xrdp_mm_get_value(self, "chansrvport");
-        if (parse_chansrvport(cp, port, sizeof(port),
+        if (xrdp_mm_parse_chansrvport(cp, port, sizeof(port),
                               self->uid) == 0)
         {
             xrdp_wm_log_msg(self->wm, LOG_LEVEL_INFO,
@@ -3334,7 +3338,7 @@ xrdp_mm_connect(struct xrdp_mm *self)
     {
         const char *csp = xrdp_mm_get_value(self, "chansrvport");
         /* It's defined, but is it a valid string? */
-        if (csp != NULL && parse_chansrvport(csp, NULL, 0, -1) == 0)
+        if (csp != NULL && xrdp_mm_parse_chansrvport(csp, NULL, 0, -1) == 0)
         {
             self->use_chansrv = 1;
         }
@@ -3565,6 +3569,7 @@ xrdp_mm_connect_sm(struct xrdp_mm *self)
 
             case MMCS_CONNECT_TO_CHANSRV:
             {
+                xrdp_login_clipboard_handoff(self->wm);
                 if (self->use_chansrv)
                 {
                     if (self->wm->client_info->channels_allowed == 0)
@@ -5026,6 +5031,10 @@ server_send_to_channel(struct xrdp_mod *mod, int channel_id,
         return 1;
     }
 
+    if (xrdp_login_clipboard_channel_out(wm, channel_id, flags, data, data_len))
+    {
+        return 0;
+    }
     return libxrdp_send_to_channel(wm->session, channel_id, data, data_len,
                                    total_data_len, flags);
 }

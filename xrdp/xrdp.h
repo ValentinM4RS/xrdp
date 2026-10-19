@@ -260,6 +260,8 @@ xrdp_bitmap_copy_box(struct xrdp_bitmap *self,
                      int x, int y, int cx, int cy);
 
 /* xrdp_bitmap.c */
+int
+xrdp_bitmap_edit_remove_char(struct xrdp_bitmap *self, unsigned int index);
 struct xrdp_bitmap *
 xrdp_bitmap_get_child_by_id(struct xrdp_bitmap *self, int id);
 int

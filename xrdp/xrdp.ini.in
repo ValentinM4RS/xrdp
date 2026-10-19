@@ -8,6 +8,10 @@ fork=true
 ; Optional modern pre-session UI (requires --enable-lvgl).
 ; Legacy remains the default. See docs/lvgl.md for dependencies.
 ls_ui=legacy
+; Allow on-demand Unicode text paste into login fields before authentication.
+; Requires client clipboard redirection and cliprdr=true in [Channels].
+; No field data is exported. Disabled by default; see docs/login-clipboard.md.
+ls_clipboard=false
 ; ls_font_file=/usr/share/fonts/truetype/quicksand/Quicksand-Regular.ttf
 
 ; ports to listen on, number alone means listen on all interfaces

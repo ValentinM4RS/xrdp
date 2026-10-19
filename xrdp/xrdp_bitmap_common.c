@@ -23,8 +23,12 @@
 #endif
 
 #include <limits.h>
+#include <openssl/crypto.h>
 
 #include "xrdp.h"
+#include "xrdp_login.h"
+#include "xrdp_login_clipboard.h"
+#include <string.h>
 
 /*****************************************************************************/
 /* Allocate bitmap for specified dimensions, checking for int overflow */
@@ -195,6 +199,10 @@ xrdp_bitmap_delete(struct xrdp_bitmap *self)
 
     if (self->wm != 0)
     {
+        if (self->type == WND_TYPE_EDIT || self->wm->login_window == self)
+        {
+            xrdp_login_clipboard_cancel(self->wm);
+        }
         if (self->wm->focused_window == self)
         {
             self->wm->focused_window = 0;
@@ -241,6 +249,10 @@ xrdp_bitmap_delete(struct xrdp_bitmap *self)
 
     if (self->parent != 0)
     {
+        if (self->parent->focused_control == self)
+        {
+            self->parent->focused_control = NULL;
+        }
         i = list_index_of(self->parent->child_list, (long)self);
 
         if (i >= 0)
@@ -263,6 +275,7 @@ xrdp_bitmap_delete(struct xrdp_bitmap *self)
             if (mod_data != 0)
             {
                 list_delete(mod_data->names);
+                xrdp_login_clear_values(mod_data->values);
                 list_delete(mod_data->values);
             }
         }
@@ -275,6 +288,12 @@ xrdp_bitmap_delete(struct xrdp_bitmap *self)
         g_free(self->data);
     }
 
+    if (self->type == WND_TYPE_EDIT && self->caption1 != NULL)
+    {
+        /* Erase the entire allocation only when its capacity is known. */
+        OPENSSL_cleanse(self->caption1, self->caption_bytes != 0 ?
+                        self->caption_bytes : strlen(self->caption1));
+    }
     g_free(self->caption1);
     g_free(self);
 }

@@ -30,5 +30,7 @@
 int
 advance_resize_state_machine(struct xrdp_mm *mm,
                              enum display_resize_state new_state);
+int
+xrdp_mm_parse_chansrvport(const char *value, char dest[], int dest_size, int uid);
 
 #endif

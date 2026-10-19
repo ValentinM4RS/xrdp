@@ -364,10 +364,28 @@ xrdp_login_submit(struct xrdp_wm *wm, struct xrdp_mod_data *mod)
         return;
     }
     list_clear(wm->mm->login_names);
-    list_clear(wm->mm->login_values);
+    xrdp_login_clear_values(wm->mm->login_values);
     list_append_list_strdup(mod->names, wm->mm->login_names, 0);
     list_append_list_strdup(mod->values, wm->mm->login_values, 0);
     xrdp_wm_set_login_state(wm, WMLS_START_CONNECT);
+}
+
+void
+xrdp_login_clear_values(struct list *values)
+{
+    int i;
+    if (values != NULL)
+    {
+        for (i = 0; i < values->count; ++i)
+        {
+            char *value = (char *)list_get_item(values, i);
+            if (value != NULL)
+            {
+                OPENSSL_cleanse(value, g_strlen(value));
+            }
+        }
+        list_clear(values);
+    }
 }
 
 int
@@ -543,6 +561,7 @@ xrdp_wm_show_edits(struct xrdp_wm *self, struct xrdp_bitmap *combo)
                 b->pointer = 1;
                 b->tab_stop = 1;
                 b->caption1 = (char *)g_malloc(256, 1);
+                b->caption_bytes = 256;
                 g_strncpy(b->caption1, field_value, 255);
                 b->edit_pos = utf8_char_count(b->caption1);
                 if (self->login_window->focused_control == 0)
@@ -1133,6 +1152,7 @@ load_xrdp_config(struct xrdp_config *config, const char *xrdp_ini, int bpp)
     globals->ini_version = 1;
     globals->default_dpi = 96;
     globals->ls_ui = 0;
+    globals->ls_clipboard = 0;
     globals->ls_font_file[0] = '\0';
 
     globals->ls_top_window_bg_color = HCOLOR(bpp, g_htoi("009cb5"));
@@ -1368,6 +1388,10 @@ load_xrdp_config(struct xrdp_config *config, const char *xrdp_ini, int bpp)
             {
                 LOG(LOG_LEVEL_WARNING, "Unknown ls_ui '%s'; using legacy", v);
             }
+        }
+        else if (g_strcasecmp(n, "ls_clipboard") == 0)
+        {
+            globals->ls_clipboard = g_text2bool(v);
         }
         else if (g_strcmp(n, "ls_font_file") == 0)
         {

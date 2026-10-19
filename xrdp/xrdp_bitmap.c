@@ -29,6 +29,7 @@
 #include "log.h"
 #include "string_calls.h"
 #include "xrdp_login_lvgl.h"
+#include <openssl/crypto.h>
 
 // For a very few key functions, using the keysym is preferable to the
 // raw scancode. Here are defines to avoid pulling an X11 dependency
@@ -1036,6 +1037,27 @@ bail:
 }
 
 /*****************************************************************************/
+/* Keep deleted password bytes out of the unused tail of an edit buffer. */
+int
+xrdp_bitmap_edit_remove_char(struct xrdp_bitmap *self, unsigned int index)
+{
+    size_t bytes;
+    int result;
+    if (self->caption1 == NULL || self->caption_bytes == 0 ||
+            strnlen(self->caption1, self->caption_bytes) >= self->caption_bytes)
+    {
+        return 0;
+    }
+    result = utf8_remove_char_at(self->caption1, index);
+    if (self->password_char != 0)
+    {
+        bytes = strlen(self->caption1);
+        OPENSSL_cleanse(self->caption1 + bytes, self->caption_bytes - bytes);
+    }
+    return result;
+}
+
+/*****************************************************************************/
 /* returns error */
 int
 xrdp_bitmap_def_proc(struct xrdp_bitmap *self, int msg,
@@ -1169,6 +1191,10 @@ xrdp_bitmap_def_proc(struct xrdp_bitmap *self, int msg,
     }
     else if (self->type == WND_TYPE_EDIT)
     {
+        if (self->caption1 == NULL || self->caption_bytes == 0)
+        {
+            return 0;
+        }
         if (msg == WM_KEYDOWN)
         {
             int scan_code = SCANCODE_FROM_KBD_EVENT(param1, param2);
@@ -1215,7 +1241,7 @@ xrdp_bitmap_def_proc(struct xrdp_bitmap *self, int msg,
                     if (self->edit_pos > 0)
                     {
                         self->edit_pos--;
-                        utf8_remove_char_at(self->caption1, self->edit_pos);
+                        xrdp_bitmap_edit_remove_char(self, self->edit_pos);
                         xrdp_bitmap_invalidate(self, 0);
                     }
                 }
@@ -1231,7 +1257,7 @@ xrdp_bitmap_def_proc(struct xrdp_bitmap *self, int msg,
                 {
                     if (self->edit_pos < n)
                     {
-                        utf8_remove_char_at(self->caption1, self->edit_pos);
+                        xrdp_bitmap_edit_remove_char(self, self->edit_pos);
                         xrdp_bitmap_invalidate(self, 0);
                     }
                 }
@@ -1264,7 +1290,7 @@ xrdp_bitmap_def_proc(struct xrdp_bitmap *self, int msg,
                 // Add a printing character to the string. If successful,
                 // bump the edit position and re-display the string
                 if (c >= ' ' &&
-                        utf8_add_char_at(self->caption1, 256, c, self->edit_pos))
+                        utf8_add_char_at(self->caption1, self->caption_bytes, c, self->edit_pos))
                 {
                     self->edit_pos++;
                     xrdp_bitmap_invalidate(self, 0);

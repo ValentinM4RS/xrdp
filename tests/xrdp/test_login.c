@@ -98,6 +98,7 @@ START_TEST(test_login_model)
     strcpy(f.client.username, "prefilled");
     strcpy(f.client.domain, "_gateway.example__1");
     ck_assert_int_eq(f.config.cfg_globals.ls_ui, 1);
+    ck_assert_int_eq(f.config.cfg_globals.ls_clipboard, 0);
     ck_assert_int_eq(xrdp_login_load_modules(&f.wm, names, modules), 0);
     ck_assert_int_eq(modules->count, 2);
     ck_assert_str_eq((const char *)list_get_item(names, 0), "Desktop");
@@ -152,6 +153,103 @@ START_TEST(test_login_model)
 END_TEST
 
 #ifdef XRDP_LVGL
+START_TEST(test_lvgl_password_not_in_widget)
+{
+    struct login_fixture f;
+    lv_obj_t *password;
+    const char *widget_text;
+    init_fixture(&f, 24);
+    ck_assert_int_eq(xrdp_login_lvgl_create(&f.wm, 1), 0);
+    password = f.wm.login_ui->edits[2];
+    lv_group_focus_obj(password);
+    xrdp_login_lvgl_paste(&f.wm, password, "synthetic-only");
+    widget_text = lv_textarea_get_text(password);
+    ck_assert_uint_eq(strspn(widget_text, "*"), strlen(widget_text));
+    free_fixture(&f);
+}
+END_TEST
+
+START_TEST(test_lvgl_secret_edit_and_submit)
+{
+    struct login_fixture f;
+    struct xrdp_login_lvgl *ui;
+    lv_obj_t *password;
+    int i;
+    int found = 0;
+    init_fixture(&f, 24);
+    ck_assert_int_eq(xrdp_login_lvgl_create(&f.wm, 1), 0);
+    ui = f.wm.login_ui;
+    ck_assert_int_eq(px(ui, -96), -(int)ui->dpi);
+    password = ui->edits[2];
+    lv_group_focus_obj(password);
+    xrdp_login_lvgl_paste(&f.wm, password, "é🔐abc");
+    lv_textarea_set_cursor_pos(password, 2);
+    xrdp_login_lvgl_key(&f.wm, 0xff08, 0, 1, 0);
+    ck_assert_int_eq(strcmp(field_value(ui, 2), "éabc"), 0);
+    xrdp_login_lvgl_key(&f.wm, 0xffff, 0, 1, 0);
+    xrdp_login_lvgl_key(&f.wm, 0, '!', 1, 0);
+    ck_assert_int_eq(strcmp(field_value(ui, 2), "é!bc"), 0);
+    ck_assert_uint_eq(strspn(lv_textarea_get_text(password), "*"), strlen(lv_textarea_get_text(password)));
+    for (i = strlen(ui->secrets[2]); i < 256; ++i)
+    {
+        ck_assert_int_eq(ui->secrets[2][i], 0);
+    }
+    handle_action(&f.wm, UI_SUBMIT);
+    for (i = 0; i < f.mm.login_names->count; ++i)
+    {
+        if (strcmp((const char *)list_get_item(f.mm.login_names, i), "password") == 0)
+        {
+            ck_assert_int_eq(strcmp((const char *)list_get_item(f.mm.login_values, i), "é!bc"), 0);
+            found = 1;
+        }
+    }
+    ck_assert_int_eq(found, 1);
+    ck_assert_ptr_null(ui->secrets);
+    free_fixture(&f);
+}
+END_TEST
+
+START_TEST(test_lvgl_clipboard_insertion)
+{
+    struct login_fixture f;
+    lv_obj_t *edit;
+    lv_obj_t *password;
+    void *target;
+    char long_text[253];
+    init_fixture(&f, 24);
+    ck_assert_int_eq(xrdp_login_lvgl_create(&f.wm, 1), 0);
+    edit = f.wm.login_ui->edits[1];
+    password = f.wm.login_ui->edits[2];
+    lv_group_focus_obj(edit);
+    lv_textarea_set_text(edit, "ab");
+    lv_textarea_set_cursor_pos(edit, 1);
+    target = xrdp_login_lvgl_paste_target(&f.wm);
+    ck_assert_ptr_eq(target, edit);
+    xrdp_login_lvgl_paste(&f.wm, target, "é🔐!");
+    ck_assert_str_eq(lv_textarea_get_text(edit), "aé🔐!b");
+    lv_group_focus_obj(password);
+    xrdp_login_lvgl_paste(&f.wm, target, "stale");
+    ck_assert_str_eq(lv_textarea_get_text(edit), "aé🔐!b");
+    ck_assert_str_eq(lv_textarea_get_text(password), "");
+    target = xrdp_login_lvgl_paste_target(&f.wm);
+    ck_assert_ptr_eq(target, password);
+    ck_assert(lv_textarea_get_password_mode(password));
+    ck_assert_int_eq(lv_textarea_get_password_show_time(password), 0);
+    memset(long_text, 'a', sizeof(long_text) - 1);
+    long_text[sizeof(long_text) - 1] = '\0';
+    xrdp_login_lvgl_paste(&f.wm, target, long_text);
+    xrdp_login_lvgl_paste(&f.wm, target, "é!");
+    ck_assert_int_eq(strlen(field_value(f.wm.login_ui, 2)), 255);
+    xrdp_login_lvgl_paste(&f.wm, target, "overflow");
+    ck_assert_int_eq(strlen(field_value(f.wm.login_ui, 2)), 255);
+    handle_action(&f.wm, UI_HELP);
+    ck_assert_ptr_null(xrdp_login_lvgl_paste_target(&f.wm));
+    xrdp_login_lvgl_paste(&f.wm, target, "stale");
+    ck_assert_int_eq(strlen(field_value(f.wm.login_ui, 2)), 255);
+    free_fixture(&f);
+}
+END_TEST
+
 START_TEST(test_lvgl_logo_alpha)
 {
     struct login_fixture f;
@@ -412,7 +510,7 @@ START_TEST(test_lvgl_input_and_lifecycle)
     handle_action(&f.wm, UI_SELECT);
     ck_assert_int_eq(ui->selected, 1);
     ck_assert_str_eq(lv_textarea_get_text(ui->edits[0]), "alice");
-    ck_assert_str_eq(lv_textarea_get_text(ui->edits[1]), "secret");
+    ck_assert_int_eq(strcmp(field_value(ui, 1), "secret"), 0);
     ck_assert(lv_textarea_get_password_mode(ui->edits[1]));
     lv_dropdown_set_selected(ui->sessions, 0);
     handle_action(&f.wm, UI_SELECT);
@@ -537,6 +635,9 @@ make_suite_login(void)
     tcase_set_timeout(tc, 20);
     tcase_add_test(tc, test_login_model);
 #ifdef XRDP_LVGL
+    tcase_add_test(tc, test_lvgl_password_not_in_widget);
+    tcase_add_test(tc, test_lvgl_secret_edit_and_submit);
+    tcase_add_test(tc, test_lvgl_clipboard_insertion);
     tcase_add_test(tc, test_lvgl_focus_outline);
     tcase_add_test(tc, test_lvgl_logo_alpha);
     tcase_add_test(tc, test_lvgl_gfx_handoff);

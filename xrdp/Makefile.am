@@ -75,6 +75,8 @@ xrdp_SOURCES = \
   xrdp_font.c \
   xrdp_listen.c \
   xrdp_login_wnd.c \
+  xrdp_login_clipboard.c \
+  xrdp_login_clipboard.h \
   xrdp_login.h \
   xrdp_login_lvgl.c \
   xrdp_login_lvgl.h \

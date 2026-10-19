@@ -155,3 +155,7 @@ xrdp
 
 An optional modern pre-session interface is available with the system LVGL
 library. See [LVGL login UI](docs/lvgl.md) for build requirements and configuration.
+
+Optional Unicode text paste into the login form before authentication is
+documented in [Login clipboard](docs/login-clipboard.md). It is disabled by
+default and supports Ctrl+V and Shift+Insert when explicitly enabled.

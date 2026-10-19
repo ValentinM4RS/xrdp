@@ -30,6 +30,7 @@
 #include "string_calls.h"
 #include "unicode_defines.h"
 #include "xrdp_login_lvgl.h"
+#include "xrdp_login_clipboard.h"
 
 /*****************************************************************************/
 static void
@@ -170,6 +171,7 @@ xrdp_wm_delete(struct xrdp_wm *self)
         return;
     }
 
+    xrdp_login_clipboard_delete(self);
     xrdp_login_lvgl_delete(self);
     xrdp_region_delete(self->screen_dirty_region);
     xrdp_mm_delete(self->mm);
@@ -649,6 +651,7 @@ xrdp_wm_init(struct xrdp_wm *self)
 
     load_xrdp_config(self->xrdp_config, self->session->xrdp_ini,
                      self->screen->bpp);
+    xrdp_login_clipboard_init(self);
 
     tconfig_load_gfx(XRDP_CFG_PATH "/gfx.toml", self->gfx_config);
 
@@ -1346,6 +1349,8 @@ xrdp_wm_mouse_click(struct xrdp_wm *self, int x, int y, int but, int down)
         return 0;
     }
 
+    xrdp_login_clipboard_cancel(self);
+
     if (x < 0)
     {
         x = 0;
@@ -1667,6 +1672,11 @@ xrdp_wm_key(struct xrdp_wm *self, int keyboard_flags, int key_code)
         }
     }
 
+    if (xrdp_login_clipboard_key(self, scancode, keyup))
+    {
+        return 0;
+    }
+
     if (self->login_ui != NULL)
     {
         ki = get_key_info_from_kbd_event(keyboard_flags, key_code, self->keys,
@@ -1830,6 +1840,8 @@ xrdp_wm_key_unicode(struct xrdp_wm *self, int device_flags, char32_t c16)
     {
         return 0;
     }
+
+    xrdp_login_clipboard_cancel(self);
 
     if (self->login_ui != NULL)
     {
@@ -2141,6 +2153,12 @@ xrdp_wm_process_channel_data(struct xrdp_wm *self,
     struct xrdp_mod *m;
     rv = 1;
 
+    if (xrdp_login_clipboard_data(self, LOWORD(param1), HIWORD(param1),
+                                  (char *)param3, param2, param4))
+    {
+        return 0;
+    }
+
     if (self->mm != 0)
     {
         if (self->mm->use_chansrv)
@@ -2301,6 +2319,7 @@ xrdp_wm_mod_connect_done(struct xrdp_wm *self, int status)
     LOG(LOG_LEVEL_DEBUG, "status from xrdp_mm_connect() : %d", status);
     if (status == 0)
     {
+        xrdp_login_clipboard_handoff(self);
         /* The module may paint before the next login-state event is handled. */
         xrdp_login_lvgl_delete(self);
         xrdp_wm_set_login_state(self, WMLS_CLEANUP);
@@ -2544,6 +2563,7 @@ xrdp_wm_get_wait_objs(struct xrdp_wm *self, tbus *robjs, int *rc,
     *rc = i;
     int rv = xrdp_mm_get_wait_objs(self->mm, robjs, rc, wobjs, wc, timeout);
     xrdp_login_lvgl_wait(self, robjs, rc, timeout);
+    xrdp_login_clipboard_wait(self, timeout);
     return rv;
 }
 
@@ -2560,6 +2580,7 @@ xrdp_wm_check_wait_objs(struct xrdp_wm *self)
 
     rv = 0;
 
+    xrdp_login_clipboard_check(self);
     if (g_is_wait_obj_set(self->login_state_event))
     {
         g_reset_wait_obj(self->login_state_event);
@@ -2618,6 +2639,7 @@ xrdp_wm_set_login_state(struct xrdp_wm *self, enum wm_login_state login_state)
         xrdp_wm_login_state_to_str(self->login_state),
         xrdp_wm_login_state_to_str(login_state));
 
+    xrdp_login_clipboard_cancel(self);
     self->login_state = login_state;
     g_set_wait_obj(self->login_state_event);
     return 0;

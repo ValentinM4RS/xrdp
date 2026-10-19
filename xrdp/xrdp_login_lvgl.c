@@ -25,6 +25,7 @@
 #include "xrdp.h"
 #include "xrdp_login.h"
 #include "xrdp_login_lvgl.h"
+#include "xrdp_login_clipboard.h"
 #include "string_calls.h"
 
 void
@@ -70,6 +71,7 @@ struct xrdp_login_lvgl
     lv_obj_t *help;
     lv_obj_t *submit;
     lv_obj_t **edits; /* indexed by module parameter, not visual position */
+    char (*secrets)[256]; /* passwords never enter toolkit-owned text storage */
     int edit_count;
     struct list *names;
     struct list *modules;
@@ -109,7 +111,9 @@ refresh_soon(struct xrdp_login_lvgl *ui)
 static int
 px(const struct xrdp_login_lvgl *ui, int value)
 {
-    return value * ui->dpi / 96;
+    /* dpi is clamped to 96..384 when the UI is created. Keep negative
+     * layout offsets signed throughout the scaling calculation. */
+    return value * (int)ui->dpi / 96;
 }
 
 static void
@@ -271,13 +275,90 @@ button(struct xrdp_login_lvgl *ui, lv_obj_t *parent, const char *text, int actio
     return obj;
 }
 
+static const char *
+field_value(struct xrdp_login_lvgl *ui, int index)
+{
+    return lv_textarea_get_password_mode(ui->edits[index]) ?
+           ui->secrets[index] : lv_textarea_get_text(ui->edits[index]);
+}
+
+static void
+secret_display(struct xrdp_login_lvgl *ui, int index, unsigned int position)
+{
+    char mask[256];
+    unsigned int count = utf8_char_count(ui->secrets[index]);
+    memset(mask, '*', count);
+    mask[count] = '\0';
+    /* LVGL may reallocate text internally. Give it only the mask, including
+     * in password mode, so none of those copies can contain a password. */
+    lv_textarea_set_text(ui->edits[index], mask);
+    lv_textarea_set_cursor_pos(ui->edits[index], position);
+}
+
+static int
+insert_field(struct xrdp_login_lvgl *ui, int index, const char *text)
+{
+    lv_obj_t *edit = ui->edits[index];
+    const char *value = field_value(ui, index);
+    size_t bytes = strlen(text);
+    if (strlen(value) + bytes > 255)
+    {
+        return 0;
+    }
+    if (lv_textarea_get_password_mode(edit))
+    {
+        unsigned int position = lv_textarea_get_cursor_pos(edit);
+        const char *cursor = value;
+        unsigned int i;
+        if (position > utf8_char_count(value))
+        {
+            return 0;
+        }
+        for (i = 0; i < position; ++i)
+        {
+            utf8_get_next_char(&cursor, NULL);
+        }
+        memmove((char *)cursor + bytes, cursor, strlen(cursor) + 1);
+        memcpy((char *)cursor, text, bytes);
+        secret_display(ui, index, position + utf8_char_count(text));
+    }
+    else
+    {
+        lv_textarea_add_text(edit, text);
+    }
+    return 1;
+}
+
+static void
+secret_delete_char(struct xrdp_login_lvgl *ui, int index, int backspace)
+{
+    unsigned int position = lv_textarea_get_cursor_pos(ui->edits[index]);
+    char *value = ui->secrets[index];
+    unsigned int count = utf8_char_count(value);
+    if (position > count || (backspace && position == 0) ||
+            (!backspace && position == count))
+    {
+        return;
+    }
+    position -= backspace != 0;
+    utf8_remove_char_at(value, position);
+    OPENSSL_cleanse(value + strlen(value), 256 - strlen(value));
+    secret_display(ui, index, position);
+}
+
+static void
+field_defocused(lv_event_t *event)
+{
+    xrdp_login_clipboard_cancel(lv_event_get_user_data(event));
+}
+
 /* Enforce the existing 255-byte field limit, not LVGL's character limit. */
 static void
 limit_insert(lv_event_t *event)
 {
     lv_obj_t *obj = lv_event_get_target_obj(event);
     const char *insert = lv_event_get_param(event);
-    if (insert[0] != LV_KEY_DEL &&
+    if (!lv_textarea_get_password_mode(obj) && insert[0] != LV_KEY_DEL &&
             strlen(lv_textarea_get_text(obj)) + strlen(insert) > 255)
     {
         lv_textarea_set_insert_replace(obj, "");
@@ -299,6 +380,12 @@ clear_edits(struct xrdp_login_lvgl *ui)
         }
     }
     free(ui->edits);
+    if (ui->secrets != NULL)
+    {
+        OPENSSL_cleanse(ui->secrets, ui->edit_count * sizeof(*ui->secrets));
+        free(ui->secrets);
+        ui->secrets = NULL;
+    }
     ui->edits = NULL;
     ui->edit_count = 0;
 }
@@ -312,12 +399,18 @@ build_fields(struct xrdp_wm *wm)
     int i;
     lv_obj_t *focus = NULL;
     int username_set = 0;
+    xrdp_login_clipboard_cancel(wm);
     clear_edits(ui);
     lv_obj_clean(ui->fields);
     ui->edit_count = mod->names->count;
     ui->edits = calloc(ui->edit_count, sizeof(*ui->edits));
-    if (ui->edit_count != 0 && ui->edits == NULL)
+    ui->secrets = calloc(ui->edit_count, sizeof(*ui->secrets));
+    if (ui->edit_count != 0 && (ui->edits == NULL || ui->secrets == NULL))
     {
+        free(ui->edits);
+        free(ui->secrets);
+        ui->edits = NULL;
+        ui->secrets = NULL;
         ui->edit_count = 0;
         return 1;
     }
@@ -341,8 +434,17 @@ build_fields(struct xrdp_wm *wm)
             lv_obj_set_scrollbar_mode(edit, LV_SCROLLBAR_MODE_OFF);
             lv_textarea_set_password_mode(edit, xrdp_login_is_secret(name));
             lv_textarea_set_password_show_time(edit, 0);
-            lv_textarea_set_text(edit, value);
+            if (xrdp_login_is_secret(name))
+            {
+                memcpy(ui->secrets[i], value, strlen(value) + 1);
+                secret_display(ui, i, utf8_char_count(value));
+            }
+            else
+            {
+                lv_textarea_set_text(edit, value);
+            }
             lv_obj_add_event_cb(edit, limit_insert, LV_EVENT_INSERT, NULL);
+            lv_obj_add_event_cb(edit, field_defocused, LV_EVENT_DEFOCUSED, wm);
             lv_group_add_obj(ui->group, edit);
             if (focus == NULL || (username_set && xrdp_login_is_secret(name)))
             {
@@ -737,6 +839,7 @@ xrdp_login_lvgl_delete(struct xrdp_wm *wm)
     {
         return;
     }
+    xrdp_login_clipboard_cancel(wm);
     pthread_mutex_lock(&ui_mutex);
     clear_edits(ui);
     if (ui->pointer != NULL)
@@ -1023,12 +1126,66 @@ xrdp_login_lvgl_mouse(struct xrdp_wm *wm, int x, int y, int but, int down)
     pthread_mutex_unlock(&ui_mutex);
 }
 
+static lv_obj_t *
+paste_target_locked(struct xrdp_login_lvgl *ui)
+{
+    int i;
+    if (ui == NULL)
+    {
+        return NULL;
+    }
+    lv_obj_t *focus = lv_group_get_focused(ui->group);
+    if (ui->mode == 0 && ui->help == NULL)
+    {
+        for (i = 0; i < ui->edit_count; ++i)
+        {
+            if (focus != NULL && focus == ui->edits[i])
+            {
+                return focus;
+            }
+        }
+    }
+    return NULL;
+}
+
+void *
+xrdp_login_lvgl_paste_target(struct xrdp_wm *wm)
+{
+    void *target;
+    pthread_mutex_lock(&ui_mutex);
+    target = paste_target_locked(wm->login_ui);
+    pthread_mutex_unlock(&ui_mutex);
+    return target;
+}
+
+void
+xrdp_login_lvgl_paste(struct xrdp_wm *wm, void *target, const char *text)
+{
+    struct xrdp_login_lvgl *ui = wm->login_ui;
+    pthread_mutex_lock(&ui_mutex);
+    if (target != NULL && target == paste_target_locked(ui))
+    {
+        int i;
+        for (i = 0; i < ui->edit_count; ++i)
+        {
+            if (ui->edits[i] == target && insert_field(ui, i, text))
+            {
+                refresh_soon(ui);
+                break;
+            }
+        }
+    }
+    pthread_mutex_unlock(&ui_mutex);
+}
+
 void
 xrdp_login_lvgl_key(struct xrdp_wm *wm, int sym, unsigned int chr, int down, int shift)
 {
     struct xrdp_login_lvgl *ui = wm->login_ui;
     lv_obj_t *focus;
     uint32_t key = 0;
+    int field_index = -1;
+    int i;
     char text[8] = {0};
     if (!down)
     {
@@ -1057,6 +1214,14 @@ xrdp_login_lvgl_key(struct xrdp_wm *wm, int sym, unsigned int chr, int down, int
     }
     pthread_mutex_lock(&ui_mutex);
     focus = lv_group_get_focused(ui->group);
+    for (i = 0; i < ui->edit_count; ++i)
+    {
+        if (focus != NULL && focus == ui->edits[i])
+        {
+            field_index = i;
+            break;
+        }
+    }
     switch (sym)
     {
         case 0xff09: /* Tab */
@@ -1123,7 +1288,10 @@ xrdp_login_lvgl_key(struct xrdp_wm *wm, int sym, unsigned int chr, int down, int
             if (focus && lv_obj_check_type(focus, &lv_textarea_class) && chr >= 32 && chr != 127)
             {
                 utf8_add_char_at(text, sizeof(text), chr, 0);
-                lv_textarea_add_text(focus, text);
+                if (field_index >= 0)
+                {
+                    insert_field(ui, field_index, text);
+                }
                 OPENSSL_cleanse(text, sizeof(text));
             }
             else if (focus && chr == ' ' && lv_obj_check_type(focus, &lv_button_class))
@@ -1134,7 +1302,15 @@ xrdp_login_lvgl_key(struct xrdp_wm *wm, int sym, unsigned int chr, int down, int
     }
     if (key)
     {
-        lv_group_send_data(ui->group, key);
+        if (field_index >= 0 && lv_textarea_get_password_mode(focus) &&
+                (key == LV_KEY_BACKSPACE || key == LV_KEY_DEL))
+        {
+            secret_delete_char(ui, field_index, key == LV_KEY_BACKSPACE);
+        }
+        else
+        {
+            lv_group_send_data(ui->group, key);
+        }
     }
     if (ui->action)
     {
@@ -1169,6 +1345,7 @@ handle_action(struct xrdp_wm *wm, int action)
     struct xrdp_mod_data *mod;
     int i;
     int rv = 0;
+    xrdp_login_clipboard_cancel(wm);
     if (action == UI_CANCEL)
     {
         wm->pro_layer->errinfo = ERRINFO_SERVER_INSUFFICIENT_PRIVILEGES;
@@ -1198,7 +1375,7 @@ handle_action(struct xrdp_wm *wm, int action)
             if (ui->edits[i] != NULL)
             {
                 xrdp_login_set_value(mod, (const char *)list_get_item(mod->names, i),
-                                     lv_textarea_get_text(ui->edits[i]));
+                                     field_value(ui, i));
             }
         }
         /* Copy and signal from the owner, never from an LVGL callback. */
@@ -1338,6 +1515,17 @@ xrdp_login_lvgl_check(struct xrdp_wm *wm)
 }
 
 #else /* A legacy-only build has no toolkit dependency. */
+void *xrdp_login_lvgl_paste_target(struct xrdp_wm *wm)
+{
+    (void)wm;
+    return NULL;
+}
+void xrdp_login_lvgl_paste(struct xrdp_wm *wm, void *target, const char *text)
+{
+    (void)wm;
+    (void)target;
+    (void)text;
+}
 int xrdp_login_lvgl_create(struct xrdp_wm *wm, int prompt)
 {
     (void)prompt;

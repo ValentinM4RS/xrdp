@@ -33,6 +33,19 @@ the legacy interface is used. Desktop session and authentication settings
 are unchanged.
 
 .TP
+\fBls_clipboard\fR=\fI[true|false]\fR
+Allow Ctrl+V and Shift+Insert to paste client Unicode clipboard text into
+the login form before authentication. The default is \fBfalse\fR.
+Requires clipboard redirection on the client and an enabled \fBcliprdr\fR
+channel. Only text received on an explicit paste request is supported;
+login fields are never exported. Invalid, multi-line or oversized text is
+rejected without truncation. The existing limit is 255 UTF-8 bytes per field,
+including existing text. Authentication and desktop clipboard policy remain
+unchanged. Enabling this option exposes a bounded clipboard parser before
+authentication; enable it only on trusted servers. See docs/login-clipboard.md
+for the security model and handoff details.
+
+.TP
 \fBls_font_file\fR=\fIpath\fR
 Optional TrueType/OpenType font file for the LVGL interface. By default,
 Fontconfig prefers Quicksand, then Nunito Sans, then the system sans-serif font.

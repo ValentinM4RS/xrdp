@@ -30,5 +30,6 @@ int xrdp_login_get_field(struct xrdp_wm *, struct xrdp_mod_data *, int, int, cha
 int xrdp_login_set_value(struct xrdp_mod_data *, const char *, const char *);
 int xrdp_login_is_secret(const char *);
 void xrdp_login_submit(struct xrdp_wm *, struct xrdp_mod_data *);
+void xrdp_login_clear_values(struct list *);
 void xrdp_login_free_modules(struct list *);
 #endif
